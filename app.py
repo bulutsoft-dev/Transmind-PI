@@ -72,5 +72,8 @@ def page_not_found(error):
 
 # Gunicorn kullanırken bu bloğa gerek yok, ama test için kalabilir
 if __name__ == '__main__':
-    # Test için basit bir sunucu çalıştır
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # ... (belki camera = Picamera2() satırı buradadır)
+    # ...
+
+    # app.run satırını bulun ve use_reloader=False ekleyin
+    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5000)
