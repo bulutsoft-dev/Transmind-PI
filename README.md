@@ -1,140 +1,107 @@
-# Transmind-PI
+# Transmind-PI — Setup & Troubleshooting Guide
 
-Bu repo için hızlı kurulum ve çalıştırma rehberi (Raspberry Pi, Picamera2 ile JPEG stream ve Gunicorn + gevent kullanarak yayın).
+This document is a practical, copy-paste friendly guide to install, run and troubleshoot the Flask + Picamera2 MJPEG streamer on a Raspberry Pi (or a similar Debian-based device).
 
-Aşağıdaki adımlar Raspberry Pi OS (Lite/Full) üzerinde SSH ile bağlı olduğunuzu ve kamerayı CSI portuna doğru bağladığınızı varsayar.
-
----
-
-## Özet
-Bu rehberde aşağıyı yapıyoruz:
-- Sistem güncelleme ve kamera arayüzünü etkinleştirme
-- Gerekli sistem paketlerini kurma (libcamera, picamera2, geliştirme başlıkları)
-- Proje klasörü oluşturma, `venv` oluşturma
-- Örnek `app.py` (Picamera2 + Flask) dosyası
-- Sanal ortamda gerekli Python paketlerini kurma (Flask, Gunicorn, gevent)
-- Gunicorn ile çalıştırma (tek process, asenkron worker) — Kamera çakışmalarını önlemek için önemli
-- Opsiyonel: systemd servis dosyası, internete açma seçenekleri (ngrok, Tailscale)
+It also includes exact commands for the issues you hit in your logs ("Device or resource busy", missing `picamera2`/`libcamera`, and `libcap-dev` build headers).
 
 ---
 
-## 1. Sistem güncelleme ve kamera etkinleştirme
-Önce sistemi güncelleyin:
+## Quick summary
+
+- Use hardware JPEG via Picamera2 (good: low CPU).
+- Keep camera initialization in one process — run Gunicorn with a single worker to avoid "Device or resource busy".
+- Use `gevent` worker class so that the single process can serve many concurrent clients.
+- If `pip install picamera2` fails with `python-prctl` errors, install `libcap-dev` first.
+- If Python complains `No module named 'libcamera'`, install `python3-libcamera` via apt.
+
+---
+
+## 0) Preconditions / assumptions
+
+- Running Raspberry Pi OS (or Debian-based OS) with SSH access.
+- Camera hardware connected to the CSI port and enabled via `raspi-config` (Legacy Camera / Interface Options -> Enable when required).
+
+---
+
+## 1) System-level install (copy/paste)
+
+Open an SSH session to the Pi and run the following (in order):
 
 ```bash
 sudo apt update && sudo apt upgrade -y
-```
-
-Kamera arayüzünü aktif edin (Legacy Camera seçeneği pi/raspios bazlı sistemlerde gerekebilir):
-
-```bash
-sudo raspi-config
-# Interface Options -> Legacy Camera (I1) -> Enable
-# Bitince reboot isteyecektir, reboot edin.
-sudo reboot
-```
-
----
-
-## 2. Gerekli sistem paketlerini yükleyin
-picamera2 ve libcamera'nın Python bağlamalarını ve derleme için gerekli başlıkları kurun:
-
-```bash
-sudo apt update
 sudo apt install -y python3-pip python3-venv python3-picamera2 python3-libcamera libcap-dev
 ```
 
-Açıklama:
-- `python3-picamera2` ve `python3-libcamera`: sistem paketleri olarak libcamera/picamera2 bağlamalarını sağlar.
-- `libcap-dev`: bazı Python paketlerinin (ör. python-prctl) derlenmesi için gerekli başlıklar.
+Notes:
+- `python3-picamera2` and `python3-libcamera` provide the system bindings for libcamera/picamera2.
+- `libcap-dev` fixes the `python-prctl` build error that `pip` sometimes raises when installing `picamera2`.
 
-Not: Eğer paket deposunda eksik bir paket varsa, önce Raspberry Pi OS sürümünüzün güncel olduğundan emin olun.
+If you previously tried `pip install picamera2` and saw build errors, installing `libcap-dev` then re-running pip will typically fix it.
 
 ---
 
-## 3. Proje klasörü ve örnek uygulama
-Proje için klasör oluşturun ve örnek `app.py` dosyasını ekleyin (aşağıdaki örnek performans için 640x480 kullanır):
+## 2) Project layout (recommended)
+
+Create a project folder and a Python virtual environment:
 
 ```bash
 mkdir -p ~/stream_project
 cd ~/stream_project
-```
-
-`app.py` içeriği (örnek):
-
-```python
-import io
-from flask import Flask, Response
-from picamera2 import Picamera2
-
-app = Flask(__name__)
-
-# Kamerayı başlat ve yapılandır (performans için 640x480 önerilir)
-camera = Picamera2()
-config = camera.create_video_configuration(main={"size": (640, 480)})
-camera.configure(config)
-camera.start()
-
-
-def generate_frames():
-    with io.BytesIO() as stream:
-        while True:
-            camera.capture_file(stream, format='jpeg')
-            frame_bytes = stream.getvalue()
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            stream.seek(0)
-            stream.truncate()
-
-
-@app.route('/video_feed')
-def video_feed():
-    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
-
-# geliştirirken test etmek isterseniz:
-# if __name__ == '__main__':
-#     app.run(host='0.0.0.0', port=5000)
-```
-
-Dosyayı kaydedin (ör. `nano app.py`) ve çıkın.
-
----
-
-## 4. Sanal ortam ve Python paketleri
-Proje klasöründe bir `venv` oluşturun, aktif edin ve gerekli paketleri kurun:
-
-```bash
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
-pip install Flask gunicorn gevent
-# Eğer sistem paketleri yeterli değilse (nadiren): pip install picamera2
 ```
 
-Not: `python3-picamera2` ve `python3-libcamera` genellikle apt ile kurulduğunda, `pip install picamera2` gerekmeyebilir. Eğer `ModuleNotFoundError: No module named 'picamera2'` veya `No module named 'libcamera'` hatası alırsanız önce apt ile kurduğunuzdan ve/veya sanal ortamda doğru paketleri yüklediğinizden emin olun.
+Install Python requirements inside the venv:
+
+```bash
+pip install Flask gunicorn gevent
+# If you still need it in the venv: pip install picamera2
+```
+
+Your repo already contains an `app.py` that uses a global `camera = Picamera2()` — that is correct (camera must be opened by the single process that uses it).
 
 ---
 
-## 5. Gunicorn ile çalıştırma (kamera erişim çakışmasını önlemek)
-Kameraya tek bir process erişebildiği için Gunicorn'u "tek worker" ile ama asenkron worker class (gevent) ile çalıştırın:
+## 3) Recommended `app.py` considerations
+
+- Keep `camera = Picamera2()` in module-global scope (outside `if __name__ == '__main__'`) so the running process opens it once.
+- Use hardware JPEG via `camera.capture_file(stream, format='jpeg')` (this keeps CPU low).
+- Lower resolution to increase FPS: `main={"size": (640, 480)}` or lower.
+- Use a streaming endpoint that yields MJPEG frames and `multipart/x-mixed-replace` mime-type.
+
+Your `app.py` already follows this pattern. Example run-time command below.
+
+---
+
+## 4) Run server (production recommended command)
+
+Because only one process can open the camera, we run Gunicorn with 1 worker; to support many concurrent clients, choose an async worker class (`gevent`).
+
+Activate your venv and run:
 
 ```bash
-# venv aktifken
+source ~/stream_project/venv/bin/activate
 gunicorn --worker-class gevent --workers 1 --bind 0.0.0.0:5000 app:app
 ```
 
-Açıklama:
-- `--workers 1`: Fiziksel kameraya yalnızca bir process erişecek. Çoklu process aynı anda kamerayı açmaya çalışırsa "Device or resource busy" hatası alırsınız.
-- `--worker-class gevent`: Tek process içinde asenkron I/O ile birden fazla istemciyi (stream izleyicisini) idare edebilirsiniz.
+Why this exact command:
+- `--workers 1`: prevents multiple processes trying to acquire the camera resource.
+- `--worker-class gevent`: allows that single process to serve many concurrent streaming clients efficiently.
 
-Tarayıcıdan test:
+Test locally from another machine on your network:
 
-http://<RASPBERRY_PI_IP>:5000/video_feed
+```bash
+# open in browser or an <img> tag pointing to
+http://<RPI_IP>:5000/stream
+# or the route you implemented (e.g. /video_feed)
+```
 
 ---
 
-## 6. systemd servisi (opsiyonel: cihaz açıldığında otomatik başlatma)
-Aşağıdaki service dosyasını `/etc/systemd/system/stream.service` olarak oluşturun ve içindeki `User`, `WorkingDirectory` ve `ExecStart` yollarını kendi kullanıcı adınıza göre düzenleyin.
+## 5) Optional: systemd service (auto-start on boot)
+
+Create `/etc/systemd/system/stream.service` and edit `User`, `WorkingDirectory`, and `ExecStart` to match your paths. Example (adjust `/home/pi/stream_project` and `pi` to your user & path):
 
 ```ini
 [Unit]
@@ -152,36 +119,98 @@ Restart=always
 WantedBy=multi-user.target
 ```
 
-Servisi etkinleştirme ve başlatma:
+Enable and start:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable stream.service
 sudo systemctl start stream.service
 sudo systemctl status stream.service
+# Follow logs
+sudo journalctl -u stream.service -f
 ```
 
 ---
 
-## 7. Hata / Sorun Giderme (Troubleshooting)
-- Hata: `RuntimeError: Failed to acquire camera: Device or resource busy` → Neden: Birden fazla process aynı anda kameraya erişmeye çalışıyor. Çözüm: Gunicorn'u `--workers 1` ile çalıştırın.
-- Hata: `ModuleNotFoundError: No module named 'picamera2'` → Çözüm: `sudo apt install python3-picamera2 python3-libcamera` veya venv içindeyken `pip install picamera2` (önce `libcap-dev` gibi sistem başlıklarını kurun).
-- Hata: `You need to install libcap development headers to build this module` → Çözüm: `sudo apt install libcap-dev` ve sonra `pip install ...` tekrar deneyin.
-- Eğer `libcamera` eksikse: `sudo apt install python3-libcamera` ile kurun.
+## 6) Troubleshooting — direct mappings to your logs
+
+1) "Device or resource busy" / `Failed to acquire camera`
+- Symptom: Gunicorn starts multiple workers and most crash with `Failed to acquire camera: Device or resource busy`.
+- Cause: Multiple processes try to open a single camera device.
+- Fix: Run Gunicorn with a single worker and a concurrent worker-class: `gunicorn --worker-class gevent --workers 1 ...`.
+
+2) `ModuleNotFoundError: No module named 'picamera2'` when running Gunicorn
+- Symptom: Worker fails to boot, complaining about missing `picamera2`.
+- Cause: `picamera2` not installed in the environment used by Gunicorn (or you installed system package but running a venv without it).
+- Fix: Activate the same venv used by Gunicorn and run `pip install picamera2`. Alternatively, use `sudo apt install python3-picamera2`.
+
+3) `You need to install libcap development headers to build this module` (during `pip install picamera2`)
+- Symptom: `pip` fails while building `python-prctl`.
+- Fix: `sudo apt install libcap-dev` then re-run `pip install picamera2`.
+
+4) `ModuleNotFoundError: No module named 'libcamera'`
+- Symptom: `picamera2` imports fail because `libcamera` Python bindings are not present.
+- Fix: `sudo apt install python3-libcamera` (system package).
 
 ---
 
-## 8. İnternete açma seçenekleri (kısa)
-- Hızlı test: ngrok kullanın (`./ngrok http 5000`) — ücretsiz plan sınırlı olabilir.
-- Güvenli ve kalıcı: Tailscale veya ZeroTier ile bir mesh VPN kullanın.
-- Doğrudan port açma: Router'da port forwarding + DDNS (No-IP / DuckDNS) — güvenlik riskleri ve NAT/ISP kısıtlamaları olabilir.
+## 7) Exposing the stream to the Internet (short options)
+
+- Quick and temporary: `ngrok` or `cloudflared` (easy for testing; ngrok URL changes unless you have a paid plan).
+- Secure and stable: `Tailscale` or `ZeroTier` — create a mesh VPN and use the Pi's virtual IP.
+- Direct: Router port forwarding + DDNS (No-IP / DuckDNS) — requires router access and security hardening.
+
+Example (ngrok):
+
+```bash
+# after downloading ngrok and authenticating
+./ngrok http 5000
+# ngrok will give you a public URL that forwards to your local server
+```
 
 ---
 
-## 9. Ek notlar
-- Donanımsal JPEG sıkıştırma kullanıldığı sürece (camera.capture_file(stream, format='jpeg')) CPU yükünüz düşük kalır; gerçek FPS sınırını büyük ölçüde kamera/VPU belirler.
-- Eğer yüksek performans, düşük gecikme ve çoklu kaynak kullanımı gerekiyorsa C/C++ ile libcamera tabanlı bir sunucu yazmak mümkün fakat geliştirme maliyeti ve karmaşıklığı artar.
+## 8) Performance tuning tips
+
+- Lower resolution (biggest FPS win): `640x480` → `320x240` if you need speed.
+- Reduce JPEG quality if supported to lower transfer size and increase throughput.
+- Use a CDN, relay or WebRTC if you expect many remote viewers (for scale and latency improvements).
+- If CPU usage is still critical and you need absolute minimal overhead, consider a C/C++ server using libcamera and a lightweight HTTP server — but only if you need that last 10–30%.
 
 ---
 
-Herhangi bir adımda hata alırsanız, aldığınız hata mesajını buraya yapıştırın; adım adım yardımcı olurum.
+## 9) Quick check-list (copy/paste)
+
+```bash
+# system prereqs (run once)
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y python3-pip python3-venv python3-picamera2 python3-libcamera libcap-dev
+
+# project setup
+mkdir -p ~/stream_project && cd ~/stream_project
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install Flask gunicorn gevent
+# optional (only if needed in your venv): pip install picamera2
+
+# run (single worker + gevent)
+gunicorn --worker-class gevent --workers 1 --bind 0.0.0.0:5000 app:app
+```
+
+---
+
+## 10) If something still fails
+
+Paste the exact error lines from the Gunicorn worker log (the stacktrace) here. I can map them to the right fix quickly. The most common next steps are:
+- Ensure you are activating the same venv that contains the installed packages before launching Gunicorn.
+- If a build step fails during pip, install the missing system dev package (`libcap-dev`, `libffi-dev`, `libssl-dev` etc.) then retry.
+
+---
+
+If you want, I can also:
+- Create/update a `systemd` service file in this repo with your actual username & paths.
+- Add a small status route (`/health`) to `app.py` that checks camera availability.
+- Add a `requirements.txt` pinned file for your venv.
+
+Tell me which of those you'd like and I'll apply them.

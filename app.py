@@ -44,6 +44,21 @@ def index():
     """Ana sayfa rotası."""
     return render_template('index.html')
 
+# === Health endpoint - camera availability check ===
+@app.route('/health')
+def health():
+    """Simple health check: returns 200 if a quick jpeg capture succeeds, otherwise 503 with error text.
+    Note: this does a short capture using the same camera instance; it's intended for monitoring.
+    """
+    try:
+        with io.BytesIO() as s:
+            camera.capture_file(s, format='jpeg')
+        return ('OK', 200)
+    except Exception as e:
+        # Return the exception message to help debugging (don't expose in public systems).
+        return (f'ERROR: {e}', 503)
+# === Health endpoint end ===
+
 # === YENİ HATA YAKALAYICI ===
 @app.errorhandler(404)
 def page_not_found(error):
