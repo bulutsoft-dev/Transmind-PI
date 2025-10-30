@@ -9,7 +9,7 @@ app = Flask(__name__)
 # Bu bloğun global alanda (if __name__ ... bloğunun DIŞINDA) olması önemlidir.
 camera = Picamera2()
 # Performans için çözünürlüğü 640x480 olarak ayarlayalım
-config = camera.create_video_configuration(main={"size": (640, 480)})
+config = camera.create_video_configuration(main={"size": (1024, 768)})
 camera.configure(config)
 camera.start()
 # === Kamera Kurulumu Bitişi ===
