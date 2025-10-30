@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="tr" style="--vsc-domain: &quot;127.0.0.1&quot;;">
+<html lang="tr" style="--vsc-domain: '127.0.0.1';">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -366,12 +366,21 @@
         <h2>Raspberry Pi - Gerçek Zamanlı Görüntü İşleme Arayüzü</h2>
 
         <div class="video-container">
-            <img
-                src="/stream"
-                class="video-stream"
-                alt="Canlı Kamera Yayını"
-                onerror="this.parentElement.innerHTML = '<div class=\'video-placeholder\'>Yayın yüklenemedi. Sunucu çalışıyor mu?</div>';"
-            >
+            <div id="videoWrapper" style="position:relative;">
+                <img
+                    id="cam"
+                    src="/stream"
+                    class="video-stream"
+                    alt="Canlı Kamera Yayını"
+                    onerror="retryStream(this)"
+                    decoding="async"
+                    crossorigin="anonymous"
+                >
+                <!-- Overlay gösterimi: yeniden bağlanılıyor mesajı -->
+                <div id="streamOverlay" class="video-placeholder" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;">
+                    Yayın yükleniyor...
+                </div>
+            </div>
         </div>
 
         <div class="description">
@@ -439,6 +448,63 @@
         updateDateTime();
         setInterval(updateDateTime, 10000); // 10 saniyede bir yenile
     });
+
+    // Kullanıcı-dostu yeniden bağlanma mantığı
+    function setOverlayVisible(visible, text) {
+        const overlay = document.getElementById('streamOverlay');
+        if (!overlay) return;
+        overlay.style.display = visible ? 'flex' : 'none';
+        if (text !== undefined) overlay.textContent = text;
+    }
+
+    function retryStream(img) {
+        console.warn('📡 Yayın kesildi, yeniden bağlanılıyor...');
+        setOverlayVisible(true, 'Yeniden bağlanıyor...');
+
+        // Küçük bir gecikme sonrası yeniden dene (cache-bust ile)
+        setTimeout(() => {
+            try {
+                // Yeni URL ile cache'i aş
+                img.src = '/stream?' + Date.now();
+                // Eğer tekrar hata oluşursa, bu onerror tekrar tetiklenecek ve retryStream çağrılacak
+            } catch (e) {
+                console.error('retryStream hata:', e);
+                // Hata varsa tekrar dene
+                setTimeout(() => retryStream(img), 2000);
+            }
+        }, 2000);
+    }
+
+    // Arka planda /health endpoint'ine bakıp stream durumunu izler
+    function monitorStream() {
+        const img = document.getElementById('cam');
+        if (!img) return;
+
+        // İlk durumda overlay'i sakla
+        setOverlayVisible(false);
+
+        setInterval(async () => {
+            try {
+                const res = await fetch('/health', { cache: 'no-store' });
+                if (res.ok) {
+                    // Sunucu sağlıklıysa overlay gizle ve gerekirse taze src ata
+                    setOverlayVisible(false);
+                    if (!img.src.includes('/stream?')) {
+                        img.src = '/stream?' + Date.now();
+                    }
+                } else {
+                    throw new Error('Health check returned ' + res.status);
+                }
+            } catch (err) {
+                console.warn('⚠️ Health check failed, reconnecting stream...', err);
+                setOverlayVisible(true, 'Sunucu yanıt vermiyor — Yeniden bağlanıyor...');
+                // Zorla yeniden bağlan
+                img.src = '/stream?' + Date.now();
+            }
+        }, 10000); // her 10 saniyede bir kontrol
+    }
+
+    document.addEventListener('DOMContentLoaded', monitorStream);
 </script>
 
 </body>
