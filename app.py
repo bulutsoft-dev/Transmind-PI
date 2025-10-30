@@ -1,10 +1,18 @@
 import io
 from flask import Flask, Response, render_template
-
+from picamera2 import Picamera2 # Kamera kütüphanesi eklendi
 
 app = Flask(__name__)
 
-
+# === Kamera Kurulumu ===
+# Kamerayı başlat ve yapılandır
+# Bu bloğun global alanda (if __name__ ... bloğunun DIŞINDA) olması önemlidir.
+camera = Picamera2()
+# Performans için çözünürlüğü 640x480 olarak ayarlayalım
+config = camera.create_video_configuration(main={"size": (640, 480)})
+camera.configure(config)
+camera.start()
+# === Kamera Kurulumu Bitişi ===
 
 
 def generate_frames():
