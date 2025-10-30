@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="tr" style="--vsc-domain: &quot;127.0.0.1&quot;;">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TransMind - RPi Canlı Yayın</title>
+    <link rel="icon" type="image/x-icon" href="https://transmind.com.tr/static/logo/logo.png">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&amp;family=Exo+2:wght@400;700;900&amp;display=swap" rel="stylesheet">
+
+    <style>
+        /* === TEMEL DEĞİŞKENLER VE SIFIRLAMA === */
+        :root {
+            --primary-color: #1A237E; /* Ana Koyu Mavi */
+            --primary-dark: #0D123B;  /* Daha Koyu Arkaplan */
+            --accent-color: #00BCD4;  /* Vurgu Rengi (Turkuaz) */
+            --text-white: #f8f9fa;    /* Ana Metin Rengi */
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            /* Arka plan gradyanı */
+            background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-color) 100%);
+            color: var(--text-white);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            position: relative;
+            padding: 15px;
+        }
+
+        /* Arka plandaki grid deseni */
+        body::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="%23ffffff10" stroke-width="0.5"/></pattern></defs><rect width="100%" height="100%" fill="url(%23grid)"/></svg>');
+            opacity: 0.5;
+            z-index: 0;
+        }
+
+        /* === ANA KART VE KAPSAYICI === */
+        .container {
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .card {
+            width: 100%;
+            border-radius: 20px;
+            padding: 30px 25px;
+            /* Yarı şeffaf "Glassmorphism" efekti */
+            background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+            box-shadow: 0 20px 60px rgba(2,6,23,0.5);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.08);
+            position: relative;
+            z-index: 1;
+        }
+
+        /* === ÜST SIRA: LOGO VE TAM EKRAN BUTONU === */
+        .top-row {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            justify-content: space-between; /* Logoyu sola, butonu sağa yaslar */
+            flex-wrap: wrap;
+            margin-bottom: 25px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-shrink: 0;
+        }
+
+        .logo .mark {
+            width: 60px;
+            height: 60px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            flex-shrink: 0;
+        }
+
+        .logo .brand {
+            font-family: 'Exo 2', sans-serif;
+            font-size: 1.6rem;
+            font-weight: 800;
+            line-height: 1;
+            /* Marka yazısı için gradyan */
+            background: linear-gradient(90deg, #fff, var(--accent-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo .subtitle {
+            font-size: 0.9rem;
+            color: rgba(255,255,255,0.9);
+            margin-top: 4px;
+            font-weight: 500;
+        }
+
+        /* === BAŞLIKLAR === */
+        h1 {
+            font-family: 'Exo 2', sans-serif;
+            font-size: 2.0rem;
+            margin: 0 0 10px 0;
+            color: var(--text-white);
+            font-weight: 800;
+            line-height: 1.2;
+            text-align: center;
+        }
+
+        h2 {
+            font-size: 1.1rem;
+            margin: 0 0 25px 0;
+            color: rgba(255,255,255,0.9);
+            font-weight: 400;
+            line-height: 1.4;
+            text-align: center;
+        }
+
+        /* === CANLI YAYIN VİDEO AKIŞI === */
+        .video-container {
+            width: 100%;
+            max-width: 640px; /* Flask kodundaki 640x480 çözünürlüğe uygun */
+            margin: 0 auto 20px auto;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            overflow: hidden; /* img etiketinin kenarlarını da yuvarlatır */
+            position: relative;
+        }
+
+        .video-stream {
+            display: block;
+            width: 100%;
+            height: auto;
+            border-radius: 16px;
+        }
+
+        /* Yayın yüklenemezse gösterilecek alan */
+        .video-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            aspect-ratio: 640 / 480; /* 4:3 oranı koru */
+            background: #000;
+            color: #888;
+            font-style: italic;
+        }
+
+        /* === TEKNİK AÇIKLAMA ALANI === */
+        .description {
+            text-align: center;
+            margin: 0 auto 30px auto;
+            max-width: 640px;
+            color: rgba(255,255,255,0.85);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .description code {
+            background: rgba(0,0,0,0.3);
+            color: var(--accent-color);
+            padding: 3px 6px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 0.9rem;
+        }
+
+        /* === BUTON GRUPLARI === */
+        .controls {
+            display: grid;
+            /* Butonlar için esnek ızgara yapısı */
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+            width: 100%;
+        }
+
+        /* Ana Eylem Butonu (Yeşil/Turkuaz) */
+        .visit-btn {
+            border: none;
+            cursor: pointer;
+            padding: 12px 20px;
+            border-radius: 10px;
+            background: linear-gradient(90deg, var(--accent-color), #00bfa6);
+            color: #052; /* Koyu yeşil metin */
+            font-weight: 700;
+            text-decoration: none;
+            box-shadow: 0 6px 18px rgba(6,214,160,0.25);
+            transition: all 0.3s ease;
+            font-size: 0.95rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            flex: 1;
+            min-width: 160px;
+        }
+
+        .visit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(6,214,160,0.35);
+        }
+
+        /* İkincil Eylem Butonu (Şeffaf) */
+        .secondary {
+            background: rgba(255,255,255,0.08);
+            color: rgba(255,255,255,0.95);
+            padding: 12px 20px;
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.12);
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            flex: 1;
+            min-width: 160px;
+        }
+
+        .secondary:hover {
+            background: rgba(255,255,255,0.12);
+            transform: translateY(-2px);
+        }
+
+        /* Üst sıradaki "Tam Ekran Akış" butonunun flex ayarı */
+        .top-row .secondary {
+            flex: 0 0 auto; /* Büyümesin, küçülmesin, boyutu otomatik olsun */
+            min-width: 0;   /* min-width'i sıfırla */
+        }
+
+        /* === ALT BİLGİ ALANI === */
+        .info-section {
+            margin-top: 25px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .info-row {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            color: rgba(255,255,255,0.78);
+            font-size: 14px;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .info-item::before {
+            content: '•';
+            color: var(--accent-color);
+            font-weight: bold;
+        }
+
+        /* === MOBİL UYUMLULUK (Responsive Tasarım) === */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+                align-items: flex-start;
+                min-height: 100vh;
+                height: auto;
+            }
+            .container { padding: 10px 0; }
+            .card { padding: 25px 20px; border-radius: 16px; }
+
+            /* Mobilde logo ve sağ üst buton alt alta gelir */
+            .top-row {
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+                gap: 15px;
+                margin-bottom: 25px;
+            }
+            .logo {
+                flex-direction: column;
+                text-align: center;
+                gap: 12px;
+                width: 100%;
+            }
+            .logo .mark { width: 70px; height: 70px; margin: 0 auto; }
+            .logo .brand { font-size: 1.8rem; }
+            .logo .subtitle { font-size: 1rem; }
+
+            h1 { font-size: 1.8rem; text-align: center; margin-bottom: 12px; }
+            h2 { font-size: 1.1rem; text-align: center; margin-bottom: 18px; }
+
+            /* Mobilde butonlar tam genişlikte alt alta dizilir */
+            .controls { grid-template-columns: 1fr; gap: 10px; }
+
+            .info-row { flex-direction: column; gap: 12px; text-align: center; }
+            .info-item { justify-content: center; }
+            .description { font-size: 0.9rem; }
+        }
+
+        @media (max-width: 480px) {
+            /* En küçük ekranlar için ayarlar */
+            .card { padding: 20px 15px; }
+            h1 { font-size: 1.6rem; }
+            h2 { font-size: 1rem; }
+            .logo .brand { font-size: 1.6rem; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="card">
+
+        <div class="top-row">
+            <div class="logo">
+                <div class="mark">
+                    <img src="https://transmind.com.tr/static/logo/logo.png" alt="TransMind Logo" style="width:50px;height:50px;border-radius:10px;object-fit:contain;display:block;" loading="lazy">
+                </div>
+                <div>
+                    <div class="brand">TransMind</div>
+                    <div class="subtitle">Smart Transit System</div>
+                </div>
+            </div>
+
+            <a class="secondary" href="/stream" target="_blank">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M1 12C1 12 5 4 12 4C19 4 23 12 23 12C23 12 19 20 12 20C5 20 1 12 1 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                    <path d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+                Tam Ekran Akış
+            </a>
+
+        </div>
+
+        <h1>TransMind Uç Birim (Edge Device)</h1>
+        <h2>Raspberry Pi - Gerçek Zamanlı Görüntü İşleme Arayüzü</h2>
+
+        <div class="video-container">
+            <img
+                src="/stream"
+                class="video-stream"
+                alt="Canlı Kamera Yayını"
+                onerror="this.parentElement.innerHTML = '<div class=\'video-placeholder\'>Yayın yüklenemedi. Sunucu çalışıyor mu?</div>';"
+            >
+        </div>
+
+        <div class="description">
+            <p>
+                Bu arayüz, TransMind projesinin sahadaki gözü olan Raspberry Pi cihazından canlı video akışı sağlar.
+                Cihaz, <code>picamera2</code> kütüphanesini kullanarak 640x480 çözünürlükte görüntü yakalar ve
+                bu <code>Flask</code> sunucusu aracılığıyla <code>/stream</code> rotası üzerinden
+                <code>MJPEG</code> formatında yayınlar. Bu ham görüntü, merkezi sunucuda yapay zeka modelleri tarafından yolcu yoğunluğunu analiz etmek için kullanılır.
+            </p>
+        </div>
+
+        <div class="controls">
+            <a class="visit-btn" href="https://panel.transmind.com.tr/" target="_blank">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M3 13H11V3H3V13ZM3 21H11V15H3V21ZM13 21H21V11H13V21ZM13 3V9H21V3H13Z" fill="#052"></path>
+                </svg>
+                Yönetim Paneli
+            </a>
+            <a class="visit-btn" href="http://www.transmind.com.tr/" target="_blank">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M10 6H6C4.89543 6 4 6.89543 4 8V18C4 19.1046 4.89543 20 6 20H16C17.1046 20 18 19.1046 18 18V14M14 4H20M20 4V10M20 4L10 14" stroke="#052" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+                Ana Proje Sitesi
+            </a>
+
+            <a class="secondary" href="https://api.transmind.com.tr/" target="_blank">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M7 8L3 12L7 16M17 8L21 12L17 16M14 4L10 20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+                API Belgeleri
+            </a>
+            <a class="secondary" href="https://transmind.onrender.com/" target="_blank">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M5 4H19C19.5523 4 20 4.44772 20 5V19C20 19.5523 19.5523 20 19 20H5C4.44772 20 4 19.5523 4 19V5C4 4.44772 4.44772 4 5 4Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                    <path d="M10 9L15 12L10 15V9Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+                Demo Sayfası
+            </a>
+        </div>
+
+        <div class="info-section">
+            <div class="info-row">
+                <div class="info-item">Cihaz zamanı: <span id="current-time">Yükleniyor...</span></div>
+                <div class="info-item">Çalışma modu: Canlı yayın (Raspberry Pi)</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Dinamik tarih güncelleme
+    function updateDateTime() {
+        const now = new Date();
+        // Tarihi '2025-10-30 12:37:33Z (UTC)' formatına getirir
+        const formattedDate = now.toISOString().replace('T', ' ').substring(0, 19) + 'Z (UTC)';
+
+        const timeElement = document.getElementById('current-time');
+        if (timeElement) {
+            timeElement.textContent = formattedDate;
+        }
+    }
+
+    // Sayfa yüklendiğinde ve her 10 saniyede bir tarihi güncelle
+    document.addEventListener('DOMContentLoaded', function() {
+        updateDateTime();
+        setInterval(updateDateTime, 10000); // 10 saniyede bir yenile
+    });
+</script>
+
+</body>
+</html>

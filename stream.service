@@ -1,0 +1,46 @@
+[Unit]
+Description=Gunicorn Video Stream Server
+After=network.target
+
+[Service]
+# Change User and WorkingDirectory to match your system user and project path
+User=pi
+Group=www-data
+WorkingDirectory=/home/pi/stream_project
+ExecStart=/home/pi/stream_project/venv/bin/gunicorn --worker-class gevent --workers 1 --bind 0.0.0.0:5000 app:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+import io
+from flask import Flask, Response
+from picamera2 import Picamera2
+
+app = Flask(__name__)
+
+# Kamerayı başlat ve yapılandır (performans için 640x480 önerilir)
+camera = Picamera2()
+config = camera.create_video_configuration(main={"size": (640, 480)})
+camera.configure(config)
+camera.start()
+
+
+def generate_frames():
+    with io.BytesIO() as stream:
+        while True:
+            camera.capture_file(stream, format='jpeg')
+            frame_bytes = stream.getvalue()
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            stream.seek(0)
+            stream.truncate()
+
+
+@app.route('/video_feed')
+def video_feed():
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+# Gunicorn ile çalıştırırken this blok gerekli değil, ama test için kullanabilirsiniz:
+# if __name__ == '__main__':
+#     app.run(host='0.0.0.0', port=5000)
+
