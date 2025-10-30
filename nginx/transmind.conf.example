@@ -1,0 +1,38 @@
+# Nginx example site config for Transmind-PI
+# Copy this to /etc/nginx/sites-available/transmind and symlink to sites-enabled
+# Adjust server_name, paths and log directories as needed.
+
+server {
+    listen 80;
+    server_name _; # replace with your domain or IP
+
+    access_log /var/log/nginx/transmind.access.log;
+    error_log  /var/log/nginx/transmind.error.log;
+
+    # If you serve static files from a 'static' directory in the project
+    location /static/ {
+        alias /home/transmind/Desktop/Transmind-PI/static/;
+        access_log off;
+        expires 30d;
+    }
+
+    location / {
+        # Proxy to Gunicorn using unix socket
+        proxy_pass http://unix:/home/transmind/Desktop/Transmind-PI/app.sock:;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Long read timeout for streaming endpoints
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_buffering off;
+    }
+
+    # Optional: a basic healthcheck location that hits the Flask /health
+    location /health {
+        proxy_pass http://unix:/home/transmind/Desktop/Transmind-PI/app.sock:;
+    }
+}
+

@@ -69,11 +69,11 @@ def page_not_found(error):
     return render_template('error.html'), 404
 # === HATA YAKALAYICI BİTİŞİ ===
 
-
+"""
 # Gunicorn kullanırken bu bloğa gerek yok, ama test için kalabilir
 if __name__ == '__main__':
     # ... (belki camera = Picamera2() satırı buradadır)
     # ...
 
     # app.run satırını bulun ve use_reloader=False ekleyin
-    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5000)
+    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5000)"""
