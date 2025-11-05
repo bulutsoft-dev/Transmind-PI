@@ -386,9 +386,9 @@
         <div class="description">
             <p>
                 Bu arayüz, TransMind projesinin sahadaki gözü olan Raspberry Pi cihazından canlı video akışı sağlar.
-                Cihaz, <code>picamera2</code> kütüphanesini kullanarak 640x480 çözünürlükte görüntü yakalar ve
+                Cihaz, uzaktan RTSP stream'ini (<code>rtsp://172.28.117.8:8554/cam</code>) alıp
                 bu <code>Flask</code> sunucusu aracılığıyla <code>/stream</code> rotası üzerinden
-                <code>MJPEG</code> formatında yayınlar. Bu ham görüntü, merkezi sunucuda yapay zeka modelleri tarafından yolcu yoğunluğunu analiz etmek için kullanılır.
+                <code>MJPEG</code> formatında yayınlar. <code>ffmpeg</code> kullanarak RTSP akışını dönüştürüp sunulmaktadır.
             </p>
         </div>
 

@@ -1,8 +1,7 @@
-import io
 import time
 import logging
+import subprocess
 from flask import Flask, Response, render_template, stream_with_context
-from picamera2 import Picamera2
 
 # === Uygulama ve Loglama Kurulumu ===
 app = Flask(__name__)
@@ -11,22 +10,12 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# === Kamera Kurulumu ===
-# Bu bölüm sağlam ve iyi, olduğu gibi kalıyor.
-camera = None
-try:
-    camera = Picamera2()
-    config = camera.create_video_configuration(main={"size": (1480, 980)})
-    config["controls"]["FrameDurationLimits"] = (33333, 33333)  # 30 FPS
-    camera.configure(config)
-    camera.start()
-    logger.info("Kamera başarıyla başlatıldı")
-except Exception as e:
-    logger.exception("Kamera başlatılamadı: %s", e)
-    camera = None
+# === RTSP Stream Ayarları ===
+RTSP_URL = "rtsp://172.28.117.8:8554/cam"
+RTSP_TIMEOUT = 10
 
-
-# === Kamera Kurulumu Bitişi ===
+# === Kamera Kurulumu Kaldırıldı ===
+# Artık uzak RTSP stream'ini kullanıyoruz
 
 
 @app.route('/')
@@ -37,10 +26,8 @@ def index():
 
 @app.route('/stream')
 def video_feed():
-    """Video akış rotası."""
-    if camera is None:
-        logger.error("/stream çağrıldı ancak kamera mevcut değil")
-        return ("Kamera mevcut değil", 503)
+    """RTSP stream'ini MJPEG formatında proxy yapar."""
+    logger.info(f"Stream isteği alındı. RTSP URL: {RTSP_URL}")
 
     return Response(stream_with_context(generate_frames()),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
@@ -48,73 +35,120 @@ def video_feed():
 
 def generate_frames():
     """
-    Kameradan MJPEG formatında akış üretir.
-
-    İYİLEŞTİRME: Bu fonksiyon artık io.BytesIO() objesini
-    döngü dışında BİR KEZ oluşturur ve her kare için yeniden kullanır.
-    Bu, bellek verimliliği için en önemli iyileştirmedir.
+    RTSP stream'ini yakalayıp MJPEG formatında yayınlar.
+    ffmpeg kullanarak RTSP'den kare çıkarır.
     """
-    logger.info("Akış oluşturucu başlatıldı.")
+    logger.info("RTSP akış oluşturucu başlatıldı.")
 
-    # Verimlilik: Stream objesini döngü dışında SADECE BİR KEZ oluştur
-    with io.BytesIO() as stream:
+    try:
+        # ffmpeg ile RTSP stream'ini açıyoruz
+        process = subprocess.Popen(
+            [
+                'ffmpeg',
+                '-rtsp_transport', 'tcp',
+                '-i', RTSP_URL,
+                '-f', 'image2pipe',
+                '-pix_fmt', 'yuvj420p',
+                '-vcodec', 'mjpeg',
+                '-'
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=10
+        )
+
+        logger.info("FFmpeg process başlatıldı")
+
         while True:
             try:
-                # 1. Görüntüyü 'jpeg' formatında doğrudan stream'e yakala
-                camera.capture_file(stream, format='jpeg')
+                # JPEG frame'i oku
+                in_bytes = process.stdout.read(4)
+                if not in_bytes:
+                    logger.warning("FFmpeg process sonlandı")
+                    break
 
-                # 2. Stream'in içeriğini (frame baytlarını) al
-                frame_bytes = stream.getvalue()
+                # JPEG başlangıç marker'ını bul (0xFFD8)
+                if in_bytes[:2] != b'\xff\xd8':
+                    # Başlangıcı bulana kadar oku
+                    bytes_read = in_bytes
+                    while True:
+                        byte = process.stdout.read(1)
+                        if not byte:
+                            break
+                        bytes_read += byte
+                        if bytes_read[-2:] == b'\xff\xd8':
+                            in_bytes = bytes_read[-2:]
+                            break
 
-                # 3. Frame'i yayınla
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                # JPEG sonu marker'ını (0xFFD9) bulana kadar oku
+                if in_bytes[:2] == b'\xff\xd8':
+                    frame_data = in_bytes
+                    while True:
+                        byte = process.stdout.read(1)
+                        if not byte:
+                            logger.warning("FFmpeg sonlandırıldı")
+                            process.terminate()
+                            raise GeneratorExit
 
-                # 4. Verimlilik: Bir sonraki frame için stream'i temizle
-                # (seek(0) imleci başa alır, truncate() içeriği siler)
-                stream.seek(0)
-                stream.truncate()
+                        frame_data += byte
+
+                        # JPEG sonu bulundu
+                        if frame_data[-2:] == b'\xff\xd9':
+                            break
+
+                    # Frame'i yayınla
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
 
             except GeneratorExit:
-                # Sağlamlık: İstemci bağlantıyı kopardı (tarayıcı kapatıldı)
                 logger.info("İstemci bağlantıyı kesti, akış durduruluyor.")
-                break  # Döngüden güvenle çık (with bloğu stream'i kapatacak)
+                process.terminate()
+                process.wait(timeout=5)
+                break
 
             except Exception as e:
-                # Sağlamlık: Kamera veya yakalama hatası
-                logger.exception("Frame yakalama/yayınlama hatası: %s", e)
+                logger.exception("Frame okuma hatası: %s", e)
+                time.sleep(1)
+                continue
 
-                # Orijinal kodunuzdaki mükemmel kamera yeniden başlatma mantığı
-                try:
-                    logger.warning("Hata sonrası kamera yeniden başlatılıyor...")
-                    camera.stop()
-                    time.sleep(0.5)
-                    camera.start()
-                    logger.info("Kamera başarıyla yeniden başlatıldı")
-                except Exception as e2:
-                    logger.exception("Kamera yeniden başlatılamadı: %s", e2)
-                    time.sleep(1.0)  # Yeniden denemeden önce bekle
-
-                # Hata ne olursa olsun, bir sonraki deneme için stream'i temizle
-                stream.seek(0)
-                stream.truncate()
+    except Exception as e:
+        logger.exception("FFmpeg başlatılamadı: %s", e)
+        yield (b'--frame\r\n'
+               b'Content-Type: text/plain\r\n\r\n'
+               b'HATA: FFmpeg baslatilami\r\n')
+        time.sleep(5)
 
 
 @app.route('/health')
 def health():
     """
-    Sistemin ve kameranın çalışıp çalışmadığını kontrol eden sağlık rotası.
-    Bu, hata ayıklama için harika bir araçtır.
+    Sistemin ve RTSP stream'inin çalışıp çalışmadığını kontrol eden sağlık rotası.
     """
     try:
-        if camera is None:
-            return ("HATA: kamera başlatılmamış", 503)
+        logger.info(f"Sağlık kontrolü yapılıyor: {RTSP_URL}")
 
-        # Hızlı bir fotoğraf çekmeyi deneyerek kamerayı test et
-        with io.BytesIO() as s:
-            camera.capture_file(s, format='jpeg')
+        # ffprobe ile RTSP stream'ini kontrol et
+        result = subprocess.run(
+            [
+                'ffprobe',
+                '-rtsp_transport', 'tcp',
+                '-v', 'error',
+                '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1:nofile=1',
+                RTSP_URL
+            ],
+            capture_output=True,
+            timeout=5
+        )
 
-        return ('OK', 200)
+        if result.returncode == 0:
+            return ('OK - RTSP Stream Aktif', 200)
+        else:
+            return ('HATA: RTSP Stream Ulaşılamıyor', 503)
+
+    except subprocess.TimeoutExpired:
+        logger.error("Sağlık kontrolü zaman aşımına uğradı")
+        return ('HATA: Zaman aşımı', 503)
     except Exception as e:
         logger.exception("Sağlık kontrolü başarısız: %s", e)
         return (f'HATA: {e}', 503)
@@ -128,5 +162,6 @@ def page_not_found(error):
 
 # Uygulamayı doğrudan çalıştırmak için (gunicorn yerine test için)
 if __name__ == '__main__':
-    logger.info("Flask sunucusu test modunda başlatılıyor...")
+    logger.info("Flask sunucusu test modunda başlatıldı...")
+    logger.info(f"RTSP Stream URL: {RTSP_URL}")
     app.run(host='0.0.0.0', port=5000, debug=False)
