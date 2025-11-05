@@ -410,8 +410,11 @@
                 </div>
                 <div class="stream-footer">
                     <div><strong>Protokol:</strong> WebRTC</div>
-                    <div><strong>Port:</strong> 8889</div>
-                    <div class="url-display" id="webrtc-url">http://172.28.117.8:8889/cam</div>
+                    <div><strong>Cihaz:</strong> <select id="device-select-webrtc" style="background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 5px; border-radius: 5px;">
+                        <option value="lab_rpi_1_zerotier">Raspberry Pi 3B+ (172.28.117.8:8889)</option>
+                        <option value="lab_rpi_2_zerotier">Raspberry Pi 4 (172.28.248.105:8890)</option>
+                    </select></div>
+                    <div class="url-display" id="webrtc-url">http://localhost:5000/stream/lab_rpi_1_zerotier</div>
                 </div>
             </div>
 
@@ -433,8 +436,11 @@
                 </div>
                 <div class="stream-footer">
                     <div><strong>Protokol:</strong> HLS (HTTP Live Streaming)</div>
-                    <div><strong>Port:</strong> 8888</div>
-                    <div class="url-display" id="hls-url">http://172.28.117.8:8888/cam/index.m3u8</div>
+                    <div><strong>Cihaz:</strong> <select id="device-select-hls" style="background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 5px; border-radius: 5px;">
+                        <option value="lab_rpi_1_zerotier">Raspberry Pi 3B+ (172.28.117.8:8889)</option>
+                        <option value="lab_rpi_2_zerotier">Raspberry Pi 4 (172.28.248.105:8890)</option>
+                    </select></div>
+                    <div class="url-display" id="hls-url">http://localhost:5000/stream/lab_rpi_1_zerotier</div>
                 </div>
             </div>
         </div>
@@ -494,8 +500,12 @@
     function checkWebRTC() {
         const container = document.getElementById('webrtc-container');
         const status = document.getElementById('webrtc-status');
+        const deviceSelect = document.getElementById('device-select-webrtc');
 
-        fetch('http://172.28.117.8:8889', {
+        const deviceId = deviceSelect.value;
+        const streamUrl = `http://localhost:5000/stream/${deviceId}`;
+
+        fetch(streamUrl, {
             method: 'HEAD',
             mode: 'no-cors',
             cache: 'no-store'
@@ -508,7 +518,7 @@
             setTimeout(() => {
                 container.innerHTML = `
                     <iframe
-                        src="http://172.28.117.8:8889/cam"
+                        src="${streamUrl}"
                         style="width: 100%; height: 100%; border: none; background: #000;"
                         allow="camera; microphone"
                         allowfullscreen>
@@ -526,6 +536,10 @@
     // HLS stream kontrolü
     function checkHLS() {
         const status = document.getElementById('hls-status');
+        const deviceSelect = document.getElementById('device-select-hls');
+
+        const deviceId = deviceSelect.value;
+        const streamUrl = `http://localhost:5000/stream/${deviceId}`;
 
         // HLS.js CDN'den yükle
         const script = document.createElement('script');
@@ -543,7 +557,7 @@
                 container.appendChild(video);
 
                 const hls = new Hls();
-                hls.loadSource('http://172.28.117.8:8888/cam/index.m3u8');
+                hls.loadSource(`${streamUrl}/index.m3u8`);
                 hls.attachMedia(video);
 
                 hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -564,6 +578,10 @@
         document.head.appendChild(script);
     }
 
+    // Cihaz değiştiğinde stream kontrolünü güncelle
+    document.getElementById('device-select-webrtc').addEventListener('change', checkWebRTC);
+    document.getElementById('device-select-hls').addEventListener('change', checkHLS);
+
     // Sayfayı yükledikten sonra stream'leri kontrol et
     document.addEventListener('DOMContentLoaded', function() {
         setTimeout(checkWebRTC, 500);
@@ -573,4 +591,3 @@
 
 </body>
 </html>
-
