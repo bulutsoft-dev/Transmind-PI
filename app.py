@@ -1,5 +1,5 @@
 import logging
-from flask import Flask, render_template
+from flask import Flask, render_template, redirect
 
 # === Uygulama ve Loglama Kurulumu ===
 app = Flask(__name__)
@@ -15,16 +15,28 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/streams')
+def streams():
+    """Canlı yayın arayüzünü gösterir."""
+    return render_template('index.html')
+
+
+@app.route('/cams')
+def cams():
+    """Canlı yayın arayüzünü gösterir."""
+    return render_template('index.html')
+
+
 @app.route('/stream')
 def stream():
-    """Ana sayfa (/cam ile aynı içeriği gösterir)."""
-    return render_template('index.html')
+    """Direkt MediaMTX WebRTC yayınına yönlendir."""
+    return redirect('http://172.28.117.8:8889/cam', code=307)
 
 
 @app.route('/cam')
 def cam():
-    """Ana sayfa (/stream ile aynı içeriği gösterir)."""
-    return render_template('index.html')
+    """Direkt MediaMTX WebRTC yayınına yönlendir."""
+    return redirect('http://172.28.117.8:8889/cam', code=307)
 
 
 @app.route('/health')
