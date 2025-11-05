@@ -351,44 +351,16 @@
                     <div class="subtitle">Smart Transit System</div>
                 </div>
             </div>
-
-            <a class="secondary" href="/stream" target="_blank">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M1 12C1 12 5 4 12 4C19 4 23 12 23 12C23 12 19 20 12 20C5 20 1 12 1 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-                    <path d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-                </svg>
-                Tam Ekran Akış
-            </a>
-
         </div>
 
         <h1>TransMind Uç Birim (Edge Device)</h1>
         <h2>Raspberry Pi - Gerçek Zamanlı Görüntü İşleme Arayüzü</h2>
 
-        <div class="video-container">
-            <div id="videoWrapper" style="position:relative;">
-                <img
-                    id="cam"
-                    src="/stream"
-                    class="video-stream"
-                    alt="Canlı Kamera Yayını"
-                    onerror="retryStream(this)"
-                    decoding="async"
-                    crossorigin="anonymous"
-                >
-                <!-- Overlay gösterimi: yeniden bağlanılıyor mesajı -->
-                <div id="streamOverlay" class="video-placeholder" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;">
-                    Yayın yükleniyor...
-                </div>
-            </div>
-        </div>
-
         <div class="description">
             <p>
-                Bu arayüz, TransMind projesinin sahadaki gözü olan Raspberry Pi cihazından canlı video akışı sağlar.
-                Cihaz, uzaktan RTSP stream'ini (<code>rtsp://172.28.117.8:8554/cam</code>) alıp
-                bu <code>Flask</code> sunucusu aracılığıyla <code>/stream</code> rotası üzerinden
-                <code>MJPEG</code> formatında yayınlar. <code>ffmpeg</code> kullanarak RTSP akışını dönüştürüp sunulmaktadır.
+                TransMind, akıllı ulaştırma yönetim sistemi olarak yapay zeka ve görüntü işleme teknolojisini kullanarak
+                gerçek zamanlı yolcu yoğunluğu analizi sağlar. Bu cihaz, saha ünitesi (Edge Device) olarak konumlandırılmış
+                Raspberry Pi sistemidir ve merkezi sunucuya bağlı olarak çalışmaktadır.
             </p>
         </div>
 
@@ -443,68 +415,11 @@
         }
     }
 
-    // Sayfa yüklendiğinde ve her 10 saniyede bir tarihi güncelle
+    // Sayfa yüklendiğinde tarihi güncelle
     document.addEventListener('DOMContentLoaded', function() {
         updateDateTime();
-        setInterval(updateDateTime, 10000); // 10 saniyede bir yenile
+        setInterval(updateDateTime, 10000);
     });
-
-    // Kullanıcı-dostu yeniden bağlanma mantığı
-    function setOverlayVisible(visible, text) {
-        const overlay = document.getElementById('streamOverlay');
-        if (!overlay) return;
-        overlay.style.display = visible ? 'flex' : 'none';
-        if (text !== undefined) overlay.textContent = text;
-    }
-
-    function retryStream(img) {
-        console.warn('📡 Yayın kesildi, yeniden bağlanılıyor...');
-        setOverlayVisible(true, 'Yeniden bağlanıyor...');
-
-        // Küçük bir gecikme sonrası yeniden dene (cache-bust ile)
-        setTimeout(() => {
-            try {
-                // Yeni URL ile cache'i aş
-                img.src = '/stream?' + Date.now();
-                // Eğer tekrar hata oluşursa, bu onerror tekrar tetiklenecek ve retryStream çağrılacak
-            } catch (e) {
-                console.error('retryStream hata:', e);
-                // Hata varsa tekrar dene
-                setTimeout(() => retryStream(img), 2000);
-            }
-        }, 2000);
-    }
-
-    // Arka planda /health endpoint'ine bakıp stream durumunu izler
-    function monitorStream() {
-        const img = document.getElementById('cam');
-        if (!img) return;
-
-        // İlk durumda overlay'i sakla
-        setOverlayVisible(false);
-
-        setInterval(async () => {
-            try {
-                const res = await fetch('/health', { cache: 'no-store' });
-                if (res.ok) {
-                    // Sunucu sağlıklıysa overlay gizle ve gerekirse taze src ata
-                    setOverlayVisible(false);
-                    if (!img.src.includes('/stream?')) {
-                        img.src = '/stream?' + Date.now();
-                    }
-                } else {
-                    throw new Error('Health check returned ' + res.status);
-                }
-            } catch (err) {
-                console.warn('⚠️ Health check failed, reconnecting stream...', err);
-                setOverlayVisible(true, 'Sunucu yanıt vermiyor — Yeniden bağlanıyor...');
-                // Zorla yeniden bağlan
-                img.src = '/stream?' + Date.now();
-            }
-        }, 10000); // her 10 saniyede bir kontrol
-    }
-
-    document.addEventListener('DOMContentLoaded', monitorStream);
 </script>
 
 </body>
