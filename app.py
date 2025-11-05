@@ -1,6 +1,5 @@
 import logging
-from flask import Flask, render_template, redirect, request
-import requests
+from flask import Flask, render_template, redirect
 from config import get_active_device_config, get_all_devices, ACTIVE_DEVICE
 
 # === Uygulama ve Loglama Kurulumu ===
@@ -12,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 # Aktif cihaz konfigürasyonunu al
 active_device = get_active_device_config()
-stream_url = f"http://{active_device['STREAM_HOST']}:{active_device['STREAM_PORT']}/cam/"
+stream_url = active_device['STREAM_URL']
 
 logger.info(f"Aktif cihaz: {ACTIVE_DEVICE}")
 logger.info(f"Stream URL: {stream_url}")
@@ -41,66 +40,17 @@ def cams():
 
 @app.route('/stream')
 def stream():
-    """MediaMTX WebRTC sayfasını proxy'le - URL tarayıcıda /stream olarak görünsün."""
-    try:
-        # Aktif cihazın stream URL'sinden içeriği al
-        response = requests.get(stream_url, timeout=5)
-        logger.info(f"Stream proxy'si: {stream_url} -> 200 OK")
-        return response.text, response.status_code, response.headers
-    except Exception as e:
-        logger.error(f"Stream proxy hatası: {e}")
-        return render_template('error.html'), 500
-
-
-@app.route('/stream/<device_id>')
-def stream_device(device_id):
-    """Belirtilen cihazın stream'ine erişim sağla."""
-    all_devices = get_all_devices()
-
-    if device_id not in all_devices:
-        logger.warning(f"Bilinmeyen cihaz: {device_id}")
-        return render_template('error.html'), 404
-
-    device = all_devices[device_id]
-    stream_url = device.get('STREAM_URL')
-
-    if not stream_url:
-        logger.error(f"Cihaz {device_id} için stream URL yapılandırılmamış")
-        return render_template('error.html'), 400
-
-    try:
-        response = requests.get(stream_url, timeout=5)
-        logger.info(f"Cihaz {device_id} stream proxy'si: {stream_url} -> 200 OK")
-        return response.text, response.status_code, response.headers
-    except Exception as e:
-        logger.error(f"Cihaz {device_id} stream proxy hatası: {e}")
-        return render_template('error.html'), 500
+    """Aktif cihazın stream URL'sine yönlendir."""
+    logger.info(f"Stream yönlendirmesi: {stream_url}")
+    return redirect(stream_url, code=307)
 
 
 @app.route('/cam')
 def cam():
-    """Direkt MediaMTX WebRTC yayınına yönlendir."""
+    """Aktif cihazın WebRTC yayınına yönlendir."""
+    logger.info(f"Cam yönlendirmesi: {stream_url}")
     return redirect(stream_url, code=307)
 
-
-@app.route('/cam/<device_id>')
-def cam_device(device_id):
-    """Belirtilen cihazın WebRTC yayınına direkt yönlendir."""
-    all_devices = get_all_devices()
-
-    if device_id not in all_devices:
-        logger.warning(f"Bilinmeyen cihaz: {device_id}")
-        return render_template('error.html'), 404
-
-    device = all_devices[device_id]
-    stream_url = device.get('STREAM_URL')
-
-    if not stream_url:
-        logger.error(f"Cihaz {device_id} için stream URL yapılandırılmamış")
-        return render_template('error.html'), 400
-
-    logger.info(f"Cihaz {device_id} yönlendirmesi: {stream_url}")
-    return redirect(stream_url, code=307)
 
 
 @app.route('/health')

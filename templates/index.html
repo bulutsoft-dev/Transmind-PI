@@ -411,8 +411,8 @@
                 <div class="stream-footer">
                     <div><strong>Protokol:</strong> WebRTC</div>
                     <div><strong>Cihaz:</strong> <select id="device-select-webrtc" style="background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 5px; border-radius: 5px;">
-                        <option value="lab_rpi_1_zerotier" data-url="http://172.28.117.8:8889/cam/">Raspberry Pi 3B+ (172.28.117.8:8889)</option>
-                        <option value="lab_rpi_2_zerotier" data-url="http://172.28.248.105:8890/cam/">Raspberry Pi 4 (172.28.248.105:8890)</option>
+                        <option value="lab_rpi_1_zerotier">Raspberry Pi 3B+ (172.28.117.8)</option>
+                        <option value="lab_rpi_2_zerotier">Raspberry Pi 4 (172.28.248.105)</option>
                     </select></div>
                     <div class="url-display" id="webrtc-url">http://172.28.117.8:8889/cam/</div>
                 </div>
@@ -437,10 +437,10 @@
                 <div class="stream-footer">
                     <div><strong>Protokol:</strong> HLS (HTTP Live Streaming)</div>
                     <div><strong>Cihaz:</strong> <select id="device-select-hls" style="background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 5px; border-radius: 5px;">
-                        <option value="lab_rpi_1_zerotier">Raspberry Pi 3B+ (172.28.117.8:8889)</option>
-                        <option value="lab_rpi_2_zerotier">Raspberry Pi 4 (172.28.248.105:8890)</option>
+                        <option value="lab_rpi_1_zerotier">Raspberry Pi 3B+ (172.28.117.8)</option>
+                        <option value="lab_rpi_2_zerotier">Raspberry Pi 4 (172.28.248.105)</option>
                     </select></div>
-                    <div class="url-display" id="hls-url">http://localhost:5000/stream/lab_rpi_1_zerotier</div>
+                    <div class="url-display" id="hls-url">http://172.28.117.8:8889/cam/</div>
                 </div>
             </div>
         </div>
@@ -486,6 +486,12 @@
 </div>
 
 <script>
+    // Cihaz IP adresleri
+    const deviceIPs = {
+        'lab_rpi_1_zerotier': '172.28.117.8',
+        'lab_rpi_2_zerotier': '172.28.248.105'
+    };
+
     // Zamanı güncelle
     function updateTime() {
         const now = new Date();
@@ -503,8 +509,9 @@
         const deviceSelect = document.getElementById('device-select-webrtc');
         const urlDisplay = document.getElementById('webrtc-url');
 
-        const selectedOption = deviceSelect.options[deviceSelect.selectedIndex];
-        const streamUrl = selectedOption.getAttribute('data-url');
+        const selectedDevice = deviceSelect.value;
+        const deviceIP = deviceIPs[selectedDevice];
+        const streamUrl = `http://${deviceIP}:8889/cam/`;
 
         urlDisplay.textContent = streamUrl;
 
@@ -542,19 +549,10 @@
         const deviceSelect = document.getElementById('device-select-hls');
         const urlDisplay = document.getElementById('hls-url');
 
-        const selectedOption = deviceSelect.options[deviceSelect.selectedIndex];
-        let deviceId = selectedOption.value;
+        const selectedDevice = deviceSelect.value;
+        const deviceIP = deviceIPs[selectedDevice];
+        const hlsUrl = `http://${deviceIP}:8889/cam/`;
 
-        // Cihaz IP adresi ve portunu config'den al
-        let streamHost = '172.28.117.8';
-        let streamPort = 8889;
-
-        if (deviceId === 'lab_rpi_2_zerotier') {
-            streamHost = '172.28.248.105';
-            streamPort = 8890;
-        }
-
-        const hlsUrl = `http://${streamHost}:${streamPort}/stream/index.m3u8`;
         urlDisplay.textContent = hlsUrl;
 
         // HLS.js CDN'den yükle
@@ -607,4 +605,3 @@
 
 </body>
 </html>
-
