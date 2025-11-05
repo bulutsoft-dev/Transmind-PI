@@ -1,5 +1,5 @@
 import logging
-from flask import Flask, render_template, redirect
+from flask import Flask, render_template, redirect, request
 
 # === Uygulama ve Loglama Kurulumu ===
 app = Flask(__name__)
@@ -29,8 +29,17 @@ def cams():
 
 @app.route('/stream')
 def stream():
-    """Direkt MediaMTX WebRTC yayınına yönlendir."""
-    return redirect('http://172.28.117.8:8889/cam', code=307)
+    """Dinamik olarak URL, port ve path parametrelerini alıp yönlendir."""
+    # Query parametrelerinden değerleri al
+    url = request.args.get('url', '172.28.117.8')  # Varsayılan URL
+    port = request.args.get('port', '8889')  # Varsayılan port
+    path = request.args.get('path', '/cam')  # Varsayılan path
+
+    # Tam URL'yi oluştur
+    target_url = f'http://{url}:{port}{path}'
+
+    logger.info(f"Stream yönlendirmesi: {target_url}")
+    return redirect(target_url, code=307)
 
 
 @app.route('/cam')
