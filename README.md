@@ -1,216 +1,309 @@
-# Transmind-PI — Setup & Troubleshooting Guide
+# Transmind-PI — MediaMTX Canlı Yayın Sunucusu
 
-This document is a practical, copy-paste friendly guide to install, run and troubleshoot the Flask + Picamera2 MJPEG streamer on a Raspberry Pi (or a similar Debian-based device).
+Bu proje, Raspberry Pi üzerinde çalışan **MediaMTX** sunucusundan gelen RTSP yayınını web tarayıcılarında görüntülemek için Flask tabanlı bir arayüz sağlar.
 
-It also includes exact commands for the issues you hit in your logs ("Device or resource busy", missing `picamera2`/`libcamera`, and `libcap-dev` build headers).
-
----
-
-## Quick summary
-
-- Use hardware JPEG via Picamera2 (good: low CPU).
-- Keep camera initialization in one process — run Gunicorn with a single worker to avoid "Device or resource busy".
-- Use `gevent` worker class so that the single process can serve many concurrent clients.
-- If `pip install picamera2` fails with `python-prctl` errors, install `libcap-dev` first.
-- If Python complains `No module named 'libcamera'`, install `python3-libcamera` via apt.
+MediaMTX, RTSP yayınlarını otomatik olarak tarayıcı dostu formatlara (WebRTC ve HLS) dönüştürür.
 
 ---
 
-## 0) Preconditions / assumptions
+## 🚀 Hızlı Başlangıç
 
-- Running Raspberry Pi OS (or Debian-based OS) with SSH access.
-- Camera hardware connected to the CSI port and enabled via `raspi-config` (Legacy Camera / Interface Options -> Enable when required).
+### Gereksinimler
 
----
+- Raspberry Pi (veya Debian tabanlı Linux)
+- Python 3.8+
+- MediaMTX sunucusu çalışıyor ve 8888/8889 portlarında aktif
+- Flask + Gunicorn + Gevent
 
-## 1) System-level install (copy/paste)
-
-Open an SSH session to the Pi and run the following (in order):
+### Kurulum (1 dakika)
 
 ```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y python3-pip python3-venv python3-picamera2 python3-libcamera libcap-dev
-```
+# Sistem paketleri
+sudo apt update && sudo apt install -y python3-pip python3-venv
 
-Notes:
-- `python3-picamera2` and `python3-libcamera` provide the system bindings for libcamera/picamera2.
-- `libcap-dev` fixes the `python-prctl` build error that `pip` sometimes raises when installing `picamera2`.
+# Proje klasörü
+mkdir -p ~/transmind-pi && cd ~/transmind-pi
 
-If you previously tried `pip install picamera2` and saw build errors, installing `libcap-dev` then re-running pip will typically fix it.
-
----
-
-## 2) Project layout (recommended)
-
-Create a project folder and a Python virtual environment:
-
-```bash
-mkdir -p ~/stream_project
-cd ~/stream_project
+# Sanal ortam
 python3 -m venv venv
 source venv/bin/activate
+
+# Python paketleri
 pip install --upgrade pip
-```
-
-Install Python requirements inside the venv:
-
-```bash
 pip install Flask gunicorn gevent
-# If you still need it in the venv: pip install picamera2
 ```
 
-Your repo already contains an `app.py` that uses a global `camera = Picamera2()` — that is correct (camera must be opened by the single process that uses it).
-
----
-
-## 3) Recommended `app.py` considerations
-
-- Keep `camera = Picamera2()` in module-global scope (outside `if __name__ == '__main__'`) so the running process opens it once.
-- Use hardware JPEG via `camera.capture_file(stream, format='jpeg')` (this keeps CPU low).
-- Lower resolution to increase FPS: `main={"size": (640, 480)}` or lower.
-- Use a streaming endpoint that yields MJPEG frames and `multipart/x-mixed-replace` mime-type.
-
-Your `app.py` already follows this pattern. Example run-time command below.
-
----
-
-## 4) Run server (production recommended command)
-
-Because only one process can open the camera, we run Gunicorn with 1 worker; to support many concurrent clients, choose an async worker class (`gevent`).
-
-Activate your venv and run:
+### Çalıştırma
 
 ```bash
-source ~/stream_project/venv/bin/activate
+# Development
+python app.py
+
+# Production (Gunicorn)
 gunicorn --worker-class gevent --workers 1 --bind 0.0.0.0:5000 app:app
 ```
 
-Why this exact command:
-- `--workers 1`: prevents multiple processes trying to acquire the camera resource.
-- `--worker-class gevent`: allows that single process to serve many concurrent streaming clients efficiently.
+Tarayıcıdan erişin: **http://localhost:5000** (veya Pi'nin IP adresi)
 
-Test locally from another machine on your network:
+---
+
+## 📡 MediaMTX Kurulumu
+
+MediaMTX henüz kurulu değilse:
 
 ```bash
-# open in browser or an <img> tag pointing to
-http://<RPI_IP>:5000/stream
-# or the route you implemented (e.g. /video_feed)
+# İndir ve kur
+sudo mkdir -p /opt/mediamtx
+cd /opt/mediamtx
+sudo wget https://github.com/bluenviron/mediamtx/releases/download/v1.1.0/mediamtx_v1.1.0_linux_armv7.tar.gz
+sudo tar -xzf mediamtx_v1.1.0_linux_armv7.tar.gz
+
+# IPv4 dinlemesi açmak için yapılandırma
+sudo nano /opt/mediamtx/mediamtx.yml
+```
+
+**Dosyada şu satırları bulup düzenle:**
+
+```yaml
+# HLS Sunucusu (Port 8888)
+hlsAddress: 0.0.0.0:8888
+
+# WebRTC Sunucusu (Port 8889)
+webrtcAddress: 0.0.0.0:8889
+```
+
+**Servisi başlat:**
+
+```bash
+sudo systemctl start mediamtx
+sudo systemctl enable mediamtx
 ```
 
 ---
 
-## 5) Optional: systemd service (auto-start on boot)
+## 🌐 Yayın Adresleri
 
-Create `/etc/systemd/system/stream.service` and edit `User`, `WorkingDirectory`, and `ExecStart` to match your paths. Example (adjust `/home/pi/stream_project` and `pi` to your user & path):
+MediaMTX sunucusu iki farklı yayın yöntemi sağlar:
+
+### 1️⃣ WebRTC (Ultra Düşük Gecikme - 1 saniye)
+- **URL:** `http://172.28.117.8:8889/cam`
+- **Avantajları:** En düşük gecikme, en yüksek kalite
+- **Dezavantajları:** Özel tarayıcı desteği gerekebilir
+
+### 2️⃣ HLS (Geniş Uyumluluk - 10-20 saniye gecikme)
+- **URL:** `http://172.28.117.8:8888/cam/index.m3u8`
+- **Avantajları:** Tüm cihazlarda çalışır (iPhone, iPad, eski tarayıcılar)
+- **Dezavantajları:** Biraz daha yüksek gecikme
+
+---
+
+## 📋 Proje Yapısı
+
+```
+transmind-pi/
+├── app.py              # Flask uygulaması
+├── requirements.txt    # Python bağımlılıkları
+├── templates/
+│   ├── index.html      # Ana sayfa (WebRTC + HLS)
+│   └── error.html      # 404 hata sayfası
+└── README.md          # Bu dosya
+```
+
+---
+
+## 🔧 app.py Detayları
+
+Flask uygulaması sadece statik sayfa sunmaktadır:
+
+- **GET /**: Ana sayfa (WebRTC ve HLS yayınları gösteren arayüz)
+- **GET /health**: Sunucu sağlık kontrolü (basit "OK" döner)
+- **404 Handler**: Bulunamayan sayfalar için hata sayfası
+
+```python
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/health')
+def health():
+    return ('OK', 200)
+```
+
+---
+
+## 📺 Arayüz Özellikleri
+
+index.html sayfası şunları sağlar:
+
+✅ **WebRTC Oynatıcı** - MediaMTX'in yerleşik web arayüzünü iframe ile gösterir
+✅ **HLS Video Oynatıcı** - HLS.js kütüphanesiyle video akışı oynatır
+✅ **Canlı Durum Göstergesi** - Her iki yayının durumunu gösterir
+✅ **Responsive Tasarım** - Mobil, tablet ve masaüstü cihazlarda uyumlu
+✅ **Dinamik Saat** - Cihaz saatini gerçek zamanlı gösterir
+
+---
+
+## 🛠️ Production Deployment
+
+### Systemd Servisi (Oto-başlatma)
+
+`/etc/systemd/system/transmind-pi.service` dosyasını oluştur:
 
 ```ini
 [Unit]
-Description=Gunicorn Video Stream Server
-After=network.target
+Description=TransMind Flask Web Server (MediaMTX Interface)
+After=network.target mediamtx.service
+Wants=mediamtx.service
 
 [Service]
 User=pi
 Group=www-data
-WorkingDirectory=/home/pi/stream_project
-ExecStart=/home/pi/stream_project/venv/bin/gunicorn --worker-class gevent --workers 1 --bind 0.0.0.0:5000 app:app
+WorkingDirectory=/home/pi/transmind-pi
+ExecStart=/home/pi/transmind-pi/venv/bin/gunicorn \
+    --worker-class gevent \
+    --workers 1 \
+    --bind 0.0.0.0:5000 \
+    app:app
 Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Enable and start:
+**Aktifleştir:**
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable stream.service
-sudo systemctl start stream.service
-sudo systemctl status stream.service
-# Follow logs
-sudo journalctl -u stream.service -f
+sudo systemctl enable transmind-pi.service
+sudo systemctl start transmind-pi.service
+sudo systemctl status transmind-pi.service
+
+# Logları izle
+sudo journalctl -u transmind-pi.service -f
+```
+
+### Nginx Reverse Proxy
+
+`/etc/nginx/sites-available/transmind-pi`:
+
+```nginx
+server {
+    listen 80;
+    server_name transmind.local;
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+**Aktifleştir:**
+
+```bash
+sudo ln -s /etc/nginx/sites-available/transmind-pi /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
 ```
 
 ---
 
-## 6) Troubleshooting — direct mappings to your logs
+## 🌍 İnternet'e Açma
 
-1) "Device or resource busy" / `Failed to acquire camera`
-- Symptom: Gunicorn starts multiple workers and most crash with `Failed to acquire camera: Device or resource busy`.
-- Cause: Multiple processes try to open a single camera device.
-- Fix: Run Gunicorn with a single worker and a concurrent worker-class: `gunicorn --worker-class gevent --workers 1 ...`.
-
-2) `ModuleNotFoundError: No module named 'picamera2'` when running Gunicorn
-- Symptom: Worker fails to boot, complaining about missing `picamera2`.
-- Cause: `picamera2` not installed in the environment used by Gunicorn (or you installed system package but running a venv without it).
-- Fix: Activate the same venv used by Gunicorn and run `pip install picamera2`. Alternatively, use `sudo apt install python3-picamera2`.
-
-3) `You need to install libcap development headers to build this module` (during `pip install picamera2`)
-- Symptom: `pip` fails while building `python-prctl`.
-- Fix: `sudo apt install libcap-dev` then re-run `pip install picamera2`.
-
-4) `ModuleNotFoundError: No module named 'libcamera'`
-- Symptom: `picamera2` imports fail because `libcamera` Python bindings are not present.
-- Fix: `sudo apt install python3-libcamera` (system package).
-
----
-
-## 7) Exposing the stream to the Internet (short options)
-
-- Quick and temporary: `ngrok` or `cloudflared` (easy for testing; ngrok URL changes unless you have a paid plan).
-- Secure and stable: `Tailscale` or `ZeroTier` — create a mesh VPN and use the Pi's virtual IP.
-- Direct: Router port forwarding + DDNS (No-IP / DuckDNS) — requires router access and security hardening.
-
-Example (ngrok):
+### Seçenek 1: Tailscale VPN (Önerilen)
+Güvenli ve kurulumu kolay:
 
 ```bash
-# after downloading ngrok and authenticating
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+```
+
+Sonra `http://<tailscale-ip>:5000` ile erişin.
+
+### Seçenek 2: ngrok (Geçici Test)
+```bash
 ./ngrok http 5000
-# ngrok will give you a public URL that forwards to your local server
 ```
 
----
-
-## 8) Performance tuning tips
-
-- Lower resolution (biggest FPS win): `640x480` → `320x240` if you need speed.
-- Reduce JPEG quality if supported to lower transfer size and increase throughput.
-- Use a CDN, relay or WebRTC if you expect many remote viewers (for scale and latency improvements).
-- If CPU usage is still critical and you need absolute minimal overhead, consider a C/C++ server using libcamera and a lightweight HTTP server — but only if you need that last 10–30%.
+### Seçenek 3: Port Forwarding (İleri)
+Router ayarlarında 5000 portunu forward et + DDNS (No-IP/DuckDNS) kullan.
 
 ---
 
-## 9) Quick check-list (copy/paste)
+## 🐛 Sorun Giderme
+
+### "Connection refused" hatası
 
 ```bash
-# system prereqs (run once)
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y python3-pip python3-venv python3-picamera2 python3-libcamera libcap-dev
+# Portun açık olup olmadığını kontrol et
+sudo netstat -tlnp | grep 5000
+sudo netstat -tlnp | grep 8888
+sudo netstat -tlnp | grep 8889
 
-# project setup
-mkdir -p ~/stream_project && cd ~/stream_project
-python3 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
-pip install Flask gunicorn gevent
-# optional (only if needed in your venv): pip install picamera2
+# Firewall kontrolü
+sudo ufw status
+sudo ufw allow 5000/tcp
+sudo ufw allow 8888/tcp
+sudo ufw allow 8889/tcp
+```
 
-# run (single worker + gevent)
-gunicorn --worker-class gevent --workers 1 --bind 0.0.0.0:5000 app:app
+### MediaMTX yayını görünmüyor
+
+```bash
+# MediaMTX servisi kontrol et
+sudo systemctl status mediamtx
+sudo journalctl -u mediamtx -f
+
+# IPv4 dinlemesi sağla
+sudo nano /opt/mediamtx/mediamtx.yml
+# hlsAddress: 0.0.0.0:8888
+# webrtcAddress: 0.0.0.0:8889
+sudo systemctl restart mediamtx
+```
+
+### CORS (Cross-Origin) hataları
+
+Eğer harici kaynaktan erişiyorsan ve CORS hataları alıyorsan, Nginx'te header ekle:
+
+```nginx
+add_header 'Access-Control-Allow-Origin' '*';
+add_header 'Access-Control-Allow-Methods' 'GET, OPTIONS';
 ```
 
 ---
 
-## 10) If something still fails
+## 📊 Başarı Kontrol Listesi
 
-Paste the exact error lines from the Gunicorn worker log (the stacktrace) here. I can map them to the right fix quickly. The most common next steps are:
-- Ensure you are activating the same venv that contains the installed packages before launching Gunicorn.
-- If a build step fails during pip, install the missing system dev package (`libcap-dev`, `libffi-dev`, `libssl-dev` etc.) then retry.
+- [ ] Python 3 + Flask kurulu
+- [ ] MediaMTX çalışıyor (8888 ve 8889 portlarda dinleme)
+- [ ] `http://localhost:5000` tarayıcıda açılıyor
+- [ ] WebRTC yayını görünüyor
+- [ ] HLS yayını görünüyor
+- [ ] Systemd servisi otomatik başlıyor
 
 ---
 
-If you want, I can also:
-- Create/update a `systemd` service file in this repo with your actual username & paths.
-- Add a small status route (`/health`) to `app.py` that checks camera availability.
-- Add a `requirements.txt` pinned file for your venv.
+## 📝 Telif & Lisans
 
-Tell me which of those you'd like and I'll apply them.
+TransMind - Akıllı Ulaştırma Yönetim Sistemi
+
+---
+
+## 💬 Destek
+
+Sorun varsa loglara bak:
+
+```bash
+# Flask uygulaması
+sudo journalctl -u transmind-pi.service -f
+
+# MediaMTX
+sudo journalctl -u mediamtx.service -f
+
+# Nginx
+sudo tail -f /var/log/nginx/error.log
+```

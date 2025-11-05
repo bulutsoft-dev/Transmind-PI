@@ -15,6 +15,18 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/stream')
+def stream():
+    """Ana sayfa (/cam ile aynı içeriği gösterir)."""
+    return render_template('index.html')
+
+
+@app.route('/cam')
+def cam():
+    """Ana sayfa (/stream ile aynı içeriği gösterir)."""
+    return render_template('index.html')
+
+
 @app.route('/health')
 def health():
     """Sistem sağlık kontrolü."""
