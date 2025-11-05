@@ -1,5 +1,6 @@
 import logging
 from flask import Flask, render_template, redirect, request
+import requests
 
 # === Uygulama ve Loglama Kurulumu ===
 app = Flask(__name__)
@@ -29,23 +30,21 @@ def cams():
 
 @app.route('/stream')
 def stream():
-    """Dinamik olarak URL, port ve path parametrelerini alıp yönlendir."""
-    # Query parametrelerinden değerleri al
-    url = request.args.get('url', '172.28.117.8')  # Varsayılan URL
-    port = request.args.get('port', '8889')  # Varsayılan port
-    path = request.args.get('path', '/cam')  # Varsayılan path
-
-    # Tam URL'yi oluştur
-    target_url = f'http://{url}:{port}{path}'
-
-    logger.info(f"Stream yönlendirmesi: {target_url}")
-    return redirect(target_url, code=307)
+    """MediaMTX WebRTC sayfasını proxy'le - URL tarayıcıda /stream olarak görünsün."""
+    try:
+        # MediaMTX WebRTC sayfasından içeriği al
+        response = requests.get('http://172.28.117.8:8889/cam/', timeout=5)
+        logger.info(f"Stream proxy'si: 172.28.117.8:8889/cam/ -> 200 OK")
+        return response.text, response.status_code, response.headers
+    except Exception as e:
+        logger.error(f"Stream proxy hatası: {e}")
+        return render_template('error.html'), 500
 
 
 @app.route('/cam')
 def cam():
     """Direkt MediaMTX WebRTC yayınına yönlendir."""
-    return redirect('http://172.28.117.8:8889/cam', code=307)
+    return redirect('http://172.28.117.8:8889/cam/', code=307)
 
 
 @app.route('/health')
