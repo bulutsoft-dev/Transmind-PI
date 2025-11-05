@@ -1,6 +1,7 @@
 import logging
 from flask import Flask, render_template, redirect, request
 import requests
+from config import get_active_device_config, get_all_devices, ACTIVE_DEVICE
 
 # === Uygulama ve Loglama Kurulumu ===
 app = Flask(__name__)
@@ -8,6 +9,13 @@ app = Flask(__name__)
 # Basit loglama
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Aktif cihaz konfigürasyonunu al
+active_device = get_active_device_config()
+stream_url = f"http://{active_device['STREAM_HOST']}:{active_device['STREAM_PORT']}/cam/"
+
+logger.info(f"Aktif cihaz: {ACTIVE_DEVICE}")
+logger.info(f"Stream URL: {stream_url}")
 
 
 @app.route('/')
@@ -32,9 +40,9 @@ def cams():
 def stream():
     """MediaMTX WebRTC sayfasını proxy'le - URL tarayıcıda /stream olarak görünsün."""
     try:
-        # MediaMTX WebRTC sayfasından içeriği al
-        response = requests.get('http://172.28.117.8:8889/cam/', timeout=5)
-        logger.info(f"Stream proxy'si: 172.28.117.8:8889/cam/ -> 200 OK")
+        # Aktif cihazın stream URL'sinden içeriği al
+        response = requests.get(stream_url, timeout=5)
+        logger.info(f"Stream proxy'si: {stream_url} -> 200 OK")
         return response.text, response.status_code, response.headers
     except Exception as e:
         logger.error(f"Stream proxy hatası: {e}")
@@ -44,7 +52,7 @@ def stream():
 @app.route('/cam')
 def cam():
     """Direkt MediaMTX WebRTC yayınına yönlendir."""
-    return redirect('http://172.28.117.8:8889/cam/', code=307)
+    return redirect(stream_url, code=307)
 
 
 @app.route('/health')
@@ -61,5 +69,6 @@ def page_not_found(error):
 
 # Uygulamayı doğrudan çalıştırmak için
 if __name__ == '__main__':
-    logger.info("Flask sunucusu başlatıldı...")
+    logger.info(f"Flask sunucusu başlatıldı... Aktif cihaz: {ACTIVE_DEVICE}")
+    logger.info(f"Stream URL: {stream_url}")
     app.run(host='0.0.0.0', port=5000, debug=False)
