@@ -70,6 +70,16 @@ hlsAddress: 0.0.0.0:8888
 
 # WebRTC Sunucusu (Port 8889)
 webrtcAddress: 0.0.0.0:8889
+
+# Stream yollarını yapılandır (paths bölümüne ekle)
+paths:
+  cam:
+    # RTSP kaynağı (kendi kameranızın RTSP URL'si)
+    source: rtsp://your-camera-ip:554/stream
+  
+  stream:
+    # Stream, cam ile aynı kaynağı kullanır
+    source: rtsp://your-camera-ip:554/stream
 ```
 
 **Servisi başlat:**
@@ -78,6 +88,41 @@ webrtcAddress: 0.0.0.0:8889
 sudo systemctl start mediamtx
 sudo systemctl enable mediamtx
 ```
+
+---
+
+## ⚠️ Önemli: MediaMTX Yapılandırması
+
+Eğer şu hatayı alıyorsanız:
+```
+path 'stream' is not configured
+```
+
+Bu, MediaMTX'in `/stream` yolunu tanımadığı anlamına gelir. Çözmek için:
+
+1. **MediaMTX config dosyasını düzenle:**
+   ```bash
+   sudo nano /opt/mediamtx/mediamtx.yml
+   ```
+
+2. **`paths:` bölümünü bulup şu eklemeyi yap:**
+   ```yaml
+   paths:
+     cam:
+       # Kameranızın RTSP adresi
+       source: rtsp://192.168.1.100:554/stream
+     
+     stream:
+       # Stream yolu (cam ile aynı kaynağı kullanır)
+       source: rtsp://192.168.1.100:554/stream
+   ```
+
+3. **Servisi yeniden başlat:**
+   ```bash
+   sudo systemctl restart mediamtx
+   ```
+
+**Not:** `rtsp://192.168.1.100:554/stream` kısmını kendi kameranızın RTSP adresine göre değiştirin!
 
 ---
 
