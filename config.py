@@ -14,6 +14,7 @@ DEVICES = {
         'NOVNC_URL': '/novnc/lab_rpi_1_zerotier/vnc.html',
         'STREAM_HOST': '172.28.117.8',
         'STREAM_PORT': 8889,
+        'STREAM_URL': 'http://172.28.117.8:8889/cam/',
     },
     'lab_rpi_2_zerotier': {
         'HOST': '172.28.248.105',
@@ -26,7 +27,8 @@ DEVICES = {
         'VNC_PORT': 5902,
         'NOVNC_URL': '/novnc/lab_rpi_2_zerotier/vnc.html',
         'STREAM_HOST': '172.28.248.105',
-        'STREAM_PORT': 8888,
+        'STREAM_PORT': 8890,
+        'STREAM_URL': 'http://172.28.248.105:8890/cam/',
     },
 }
 
@@ -42,4 +44,3 @@ def get_active_device_config():
 def get_all_devices():
     """Tüm cihazları döndür."""
     return DEVICES
-
