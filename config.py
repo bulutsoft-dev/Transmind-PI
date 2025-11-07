@@ -1,5 +1,14 @@
 import os
 
+# Debug modu
+DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
+
+# Server URL'leri
+if DEBUG:
+    SERVER_BASE_URL = 'http://localhost:8000'
+else:
+    SERVER_BASE_URL = 'https://transmind.com.tr'
+
 # Cihaz konfigürasyonları
 DEVICES = {
     'lab_rpi_1_zerotier': {
